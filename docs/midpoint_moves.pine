@@ -1,0 +1,149 @@
+//@version=6
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © CraftyChaos - Fixed Parameters Version
+
+indicator("Midpoint Moves", overlay=true, max_lines_count=500)
+
+// Input settings
+next_line_col = input.color(color.new(color.white, 25), "Next Level Line Color")
+show_other_lines = input.bool(true, "Show all active levels")
+other_line_col = input.color(color.new(color.white, 75), "Other Active Line Color")
+
+// Variables
+var streak_hl = array.new<float>()
+var mids_up = array.new<line>()
+var mids_dn = array.new<line>()
+var mids_old = array.new<line>()
+
+// Bar detection
+upBar = close > open
+dnBar = close < open
+
+// Streak end detection
+up_streak_ended = dnBar and upBar[1]
+dn_streak_ended = upBar and dnBar[1]
+
+// Create lines when streaks end
+if up_streak_ended or dn_streak_ended
+    if array.size(streak_hl) >= 2
+        midpoint = math.avg(array.min(streak_hl), array.max(streak_hl))
+        
+        if dn_streak_ended and midpoint > 0
+            if array.size(mids_dn) >= 20
+                old_line = array.shift(mids_dn)
+                line.delete(old_line)
+            
+            new_line = line.new(chart.point.new(time=time[1], index=bar_index-1, price=midpoint), chart.point.new(time=time + 1000000000, index=bar_index+10, price=midpoint), xloc=xloc.bar_time, extend=extend.right, style=line.style_solid, color=next_line_col, width=1)
+            array.push(mids_dn, new_line)
+            
+        if up_streak_ended and midpoint > 0
+            if array.size(mids_up) >= 20
+                old_line = array.shift(mids_up)
+                line.delete(old_line)
+            
+            new_line = line.new(chart.point.new(time=time[1], index=bar_index-1, price=midpoint), chart.point.new(time=time + 1000000000, index=bar_index+10, price=midpoint), xloc=xloc.bar_time, extend=extend.right, style=line.style_solid, color=next_line_col, width=1)
+            array.push(mids_up, new_line)
+
+    array.clear(streak_hl)
+
+// Collect streak data
+array.push(streak_hl, high)
+array.push(streak_hl, low)
+
+// Keep array size manageable
+if array.size(streak_hl) > 50
+    array.shift(streak_hl)
+
+// Process resistance levels
+var label below_lbl = na
+float below = na
+
+if array.size(mids_up) > 0
+    for i = array.size(mids_up) - 1 to 0 by 1
+        current_line = array.get(mids_up, i)
+        line_price = line.get_y2(current_line)
+        
+        line.set_color(current_line, show_other_lines ? other_line_col : color.new(color.white, 90))
+        
+        if close < line_price
+            line.set_extend(current_line, extend.none)
+            line.set_style(current_line, line.style_dotted)
+            line.set_color(current_line, color.new(color.gray, 70))
+            array.push(mids_old, current_line)
+            array.remove(mids_up, i)
+    
+    if array.size(mids_up) > 0
+        below := line.get_y2(array.get(mids_up, array.size(mids_up) - 1))
+        target_index = array.size(mids_up) - 1
+        
+        for i = array.size(mids_up) - 1 to 0 by 1
+            line_price = line.get_y2(array.get(mids_up, i))
+            if close >= line_price and line_price > below
+                below := line_price
+                target_index := i
+        
+        line.set_color(array.get(mids_up, target_index), next_line_col)
+        line.set_width(array.get(mids_up, target_index), 2)
+        
+        if not na(below_lbl)
+            label.delete(below_lbl)
+        below_lbl := label.new(chart.point.new(time=time, index=bar_index, price=below), text=str.tostring(below, format.mintick), color=color.new(color.black, 90), style=label.style_label_upper_left, textcolor=next_line_col, size=size.small)
+
+// Process support levels  
+var label above_lbl = na
+float above = na
+
+if array.size(mids_dn) > 0
+    for i = array.size(mids_dn) - 1 to 0 by 1
+        current_line = array.get(mids_dn, i)
+        line_price = line.get_y2(current_line)
+        
+        line.set_color(current_line, show_other_lines ? other_line_col : color.new(color.white, 90))
+        
+        if close > line_price
+            line.set_extend(current_line, extend.none)
+            line.set_style(current_line, line.style_dotted)
+            line.set_color(current_line, color.new(color.gray, 70))
+            array.push(mids_old, current_line)
+            array.remove(mids_dn, i)
+    
+    if array.size(mids_dn) > 0
+        above := line.get_y2(array.get(mids_dn, array.size(mids_dn) - 1))
+        target_index = array.size(mids_dn) - 1
+        
+        for i = array.size(mids_dn) - 1 to 0 by 1
+            line_price = line.get_y2(array.get(mids_dn, i))
+            if close <= line_price and line_price < above
+                above := line_price
+                target_index := i
+        
+        line.set_color(array.get(mids_dn, target_index), next_line_col)
+        line.set_width(array.get(mids_dn, target_index), 2)
+        
+        if not na(above_lbl)
+            label.delete(above_lbl)
+        above_lbl := label.new(chart.point.new(time=time, index=bar_index, price=above), text=str.tostring(above, format.mintick), color=color.new(color.black, 90), style=label.style_label_lower_left, textcolor=next_line_col, size=size.small)
+
+// Clean old lines
+while array.size(mids_old) > 50
+    old_line = array.shift(mids_old)
+    line.delete(old_line)
+
+// Midpoint line
+var line mids_mid = na
+if not na(above) and not na(below)
+    if not na(mids_mid)
+        line.delete(mids_mid)
+    
+    mid_price = math.avg(above, below)
+    mids_mid := line.new(chart.point.new(time=time, index=bar_index, price=mid_price), chart.point.new(time=time + 1000000000, index=bar_index+10, price=mid_price), xloc=xloc.bar_time, extend=extend.right, style=line.style_dashed, color=color.new(next_line_col, 60), width=1)
+
+// Info table
+var info_table = table.new(position.bottom_right, 2, 3, bgcolor=color.new(color.black, 80))
+if barstate.islast
+    table.cell(info_table, 0, 0, "TF:", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 0, str.tostring(timeframe.period), text_color=color.yellow, text_size=size.tiny)
+    table.cell(info_table, 0, 1, "Resistance:", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 1, str.tostring(array.size(mids_up)), text_color=color.red, text_size=size.tiny)
+    table.cell(info_table, 0, 2, "Support:", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 2, str.tostring(array.size(mids_dn)), text_color=color.green, text_size=size.tiny)
